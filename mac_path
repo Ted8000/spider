@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import pickle
+import re
+import time
+import os 
+
+from selenium import webdriver
+from selenium.webdriver.support.select import Select
+
+import numpy as np
+
+chrom = "/Users/lupinsu/Downloads/xunlei/chromedriver"
+os.environ.get(chrom)
+
+data = []
+error = []
+clean = re.compile('\d')
+
+with open('./index.npy', 'rb') as f:
+    info = np.load(f)
+
+for i in info[0]:
+    try:
+        driver = webdriver.Chrome(chrom)
+        driver.get('http://kns.cnki.net/kns/brief/result.aspx?dbprefix=CCND')
+        driver.find_element_by_id('txt_1_value1').send_keys(i[0])
+        driver.find_element_by_name('publishdate_from').send_keys(i[1][0:4] + '-' + i[1][-2:] + '-' + i[1][5:7])
+        driver.find_element_by_name('publishdate_to').send_keys(i[2][0:4] + '-' + i[2][-2:] + '-' + i[2][5:7])
+        s1 = Select(driver.find_element_by_id('magazine_special1'))
+        s1.select_by_visible_text("精确")
+
+
+        driver.find_elements_by_xpath('//*[@id="joursource_1"]/a/img')[0].click()
+        now_handle = driver.current_window_handle
+        for handle in driver.window_handles:
+            if handle != now_handle:
+                driver.switch_to.window(handle)
+                time.sleep(0.5)
+
+                for i in info[1]:
+                    driver.find_element_by_id('txtKeyword').clear()
+                    driver.find_element_by_id('txtKeyword').send_keys(i)
+                    driver.find_elements_by_xpath('//*[@id="divConditionSCDB"]/img')[0].click()
+                    driver.switch_to.frame('iframeResult')
+                    # print(driver.page_source)
+                    driver.find_element_by_id('chb_CQYB').click()
+
+                driver.find_elements_by_xpath('//*[@id="ibtOk"]')[0].click()
+                driver.close()
+        driver.switch_to.window(now_handle)
+        driver.find_element_by_id('btnSearch').click()
+        time.sleep(3)
+        driver.switch_to.frame('iframeResult')
+        text = str(driver.find_element_by_class_name('pagerTitleCell').text)
+        print(text)
+        data.append(re.findall(clean, text)[0])
+        driver.quit()
+        break
+    except Exception as e:
+        print('搜索错误', e)
+        error.append(i[0])
+        break
+
+with open('ok.pkl', 'wb') as f:
+    pickle.dump(data, f)
+
+with open('error.pkl', 'wb') as f:
+    pickle.dump(error, f)
