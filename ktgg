@@ -1,0 +1,142 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
+__author__ = "Lupinsu"
+
+import requests
+from pyutils.cate import Cate
+from bs4 import BeautifulSoup
+from pyutils import date_cleaner
+import time
+from Base import Base
+
+class xuzhou(Base):
+    def __init__(self, mysqlConfig=None):
+        Base.__init__(self, mysqlConfig)
+        self.start_url = "http://www.czzlfy.gov.cn/tzgg/index.shtml"
+        self.initial_url = "http://www.czzlfy.gov.cn/tzgg"
+        self.encoding = 'utf-8'
+        self.province = u"江苏省"
+        self.court = u"常州市钟楼区人民法院"
+        self.site_no = 1026
+        pass
+
+    def textclean(self, text):
+        try:
+            # print(text)
+            if u"被告人:" in text:
+                return text[4:]
+            else:
+                text = text.split(";")[0].split(":")[1] + ',' + text.split(";")[1].split(":")[1]
+            return text
+        except Exception as e:
+            print('字段解析异常：', e.message)
+            return
+        pass
+
+    def parse(self):
+        """
+        解析初始页面获取detail_url
+        返回detail_url的列表
+        :return:
+        """
+
+        r = requests.get(self.start_url)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            if soup == None:
+                return 0
+            else:
+                url_lists = []
+                for i in range(14):
+                    url_list = soup.select("tr td[align=left]")[21 + i].select_one("a").get('href')[7:]
+                    detail_url = self.initial_url + url_list
+                    url_lists.append(detail_url)
+                self.logger.info(Cate.detail, '初始页面获取完成')
+                return url_lists
+        else:
+            self.logger.error(Cate.list, "网络请求出错，url:{},状态码:{}".format(r.url, r.status_code))
+            return 0
+
+    def parser_two(self, url):
+        """
+        解析详情页
+        :param url: detail url
+        :return:
+        """
+        r = requests.get(url)
+        r.encoding = self.encoding
+        soup = BeautifulSoup(r.text, 'html.parser')
+        content = soup.select("div[class=article_content] p")
+        x = []
+        for ii in range(len(content)):
+            time.sleep(0.5)
+            for i in content[ii]:
+                x.append(i.extract())
+            if len(x) == 6:
+                try:
+                    data = {
+                        "anhao": x[0][4:],
+                        "anyou": x[1][4:],
+                        "dangshiren": x[2][4:],
+                        "fating": x[3][4:],
+                        "kaitingriqi": date_cleaner.clean_date(x[4][4:]),
+                        "gonggao_id": x[0][4:]+'_'+str(date_cleaner.clean_date(x[4][4:])),
+                        "fayuan": self.court,
+                        "sheng": self.province,
+                        "no": self.site_no,
+                        "gonggao": x,
+                        "dangshirenjx": self.textclean(x[2][4:]),
+                        "dangshirenjx_flag": "1",
+                    }
+                    self.dbKtggInsertNew(data)
+                    print(data)
+                except Exception as e:
+                    self.logger.info(Cate.detail, '数据解析有错误')
+                    return
+            elif len(x) == 7:
+                try:
+                    data = {
+                        "anhao": x[0][4:],
+                        "anyou": x[1][4:],
+                        "dangshiren": x[2][4:],
+                        "chengban":x[3][4:],
+                        "fating": x[4][4:],
+                        "kaitingriqi": date_cleaner.clean_date(x[5][4:]),
+                        "gonggao_id": x[0][4:]+'_'+str(date_cleaner.clean_date(x[5][4:])),
+                        "fayuan": self.court,
+                        "sheng": self.province,
+                        "no": self.site_no,
+                        "gonggao": "",
+                        "dangshirenjx": self.textclean(x[2][4:]),
+                        "dangshirenjx_flag": 1,
+                    }
+                    self.dbKtggInsertNew(data)
+                    print(data)
+                except Exception as e:
+                    self.logger.info(Cate.detail, '数据解析有错误:{}'.format(e.message))
+                    return
+            else:
+                return
+            x = []
+
+    def run(self):
+        try:
+            url_lists = self.parse()
+            print(len(url_lists))
+            for i in url_lists:
+                # time.sleep(3.33)
+                self.parser_two(i)
+                print(i)
+            self.logger.info(Cate.update_ok, '更新成功')
+        except Exception as e:
+            self.logger.error(Cate.update_err, '未处理异常：{}'.format(e.message))
+            print()
+
+
+if __name__ == "__main__":
+        spider = xuzhou()
+        spider.run()
+
+
